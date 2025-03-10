@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Diary</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="diary-container">
+        <span class="close-diary" onclick="closeDiary()">×</span>
+        <div id="mediaModal" class="modal">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div class="modal-content">
+                <img id="modalImage" class="modal-media">
+                <video id="modalVideo" class="modal-media" controls></video>
+            </div>
+        </div>
+       
+
+        <h2 id="diaryOwner">📖 <span id="diaryTitle">Diary</span></h2>
+        <div class="diary-book">
+            <div class="page left-page">
+               
+                <!-- ✅ Make Diary Image Clickable -->
+               <img id="diaryImage" src="" alt="Diary Image" onclick="openModal(this.src, 'image')">
+
+            </div>
+           
+            <div class="page right-page">
+                <textarea id="diaryText" placeholder="Write about this memory..."></textarea>
+                <p class="page-number" id="pageNumber">Page 1</p>
+            </div>
+            
+        </div>
+        </div>
+    </div>
+    <p class="page-number" id="pageNumber">Page 1</p>
+</div>
+<button class="comment-btn" onclick="openCommentPage()">
+    💬 Comments <span id="commentBadge" class="badge" style="display: none;">0</span>
+</button>
+
+
+        <input type="file" id="imageUpload" accept="image/*" onchange="uploadImage()">
+        
+        <button onclick="prevPage()">⬅️Previous</button>
+        <button onclick="nextPage()">Next➡️</button>
+        <div id="ownerButtons">
+        <button onclick="saveEntry()">💾Save Page</button>
+        <button id="deletePageBtn" onclick="deletePage()">🗑️Tear Page</button>
+         </div>
+       
+    </div>
+
+    <script src="diary.js"></script>
+</body>
+</html>

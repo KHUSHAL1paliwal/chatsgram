@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbox</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div class="chat-container">
+        <!-- Left Panel: List of All Previous Chats -->
+        <div class="chat-list">
+            <div class="chatlist-header">
+                <h2>Chats</h2>
+                
+                <!-- ✅ Hamburger Menu with Proper Positioning -->
+                <div class="chatlist-menu-container">
+                    <button class="chatlist-menu-btn" onclick="toggleChatlistMenu()">☰</button>
+                    
+                    <!-- ✅ Dropdown Menu (Initially Hidden) -->
+                    <div id="chatlistDropdown" class="chatlist-dropdown hidden">
+                        <button onclick="openSearchUser()">🔍 Search User</button>
+                        <button onclick="deleteChatUser()">🗑️ Delete User</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ✅ Search Bar (Initially Hidden) -->
+            <div id="chatlistSearchContainer" class="hidden">
+                <input type="text" id="chatlistSearchInput" placeholder="Search user..." onkeyup="searchUserInChatlist()">
+                <button class="close-btn" onclick="closeSearchUser()">✖</button>
+            </div>
+
+            <ul id="chatUsers"></ul>
+        </div>
+
+        <!-- Right Panel: Chat Window -->
+        <div class="chat-window">
+            <div class="chat-header">
+                <h2 id="chatUser">Select a chat</h2>
+                <span id="loggedInUser"></span> <!-- Show logged-in username -->
+                <!-- Three-dot Menu -->
+                <div class="call-buttons">
+                    <button class="call-btn" onclick="startVoiceCall()">📞</button>
+                    <button class="call-btn" onclick="startVideoCall()">📹</button>
+                </div>
+    <div class="menu-container">
+        <button class="menu-btn" onclick="toggleMenu()">⋮</button>  <!-- Three-dot button -->
+       
+        <div id="dropdownMenu" class="dropdown-menu">
+            <button onclick="searchMessages()">🔍 Search Chat</button>
+            <button onclick="clearChat()">🗑️ Clear Chat</button>
+        </div>
+    </div>
+             
+            </div>
+             
+
+
+
+
+<!-- Search Bar (Initially Hidden) -->
+<div id="searchBar" class="search-container" style="display: none;">
+    <input type="text" id="searchInput" placeholder="Search messages..." onkeyup="filterMessages()">
+    <button class="close-btn" onclick="hideSearch()">✖</button>
+</div>
+
+
+<!-- Incoming Call Popup -->
+<div id="globalCallPopup" class="call-popup" style="display: none;">
+    <p id="globalCallerInfo"></p>
+    <button onclick="acceptGlobalCall()">✅ Accept</button>
+    <button onclick="rejectGlobalCall()">❌ Reject</button>
+</div>
+
+<!-- Video Call UI -->
+<div id="videoCallContainer" class="video-container" style="display: none;">
+    <video id="localVideo" autoplay playsinline></video>
+    <video id="remoteVideo" autoplay playsinline></video>
+    <button class="end-call-btn" onclick="endCall()">❌ End Call</button>
+</div>
+
+
+            <!-- Modal for full-screen media display -->
+<div id="mediaModal" class="modal">
+    <span class="close" onclick="closeModal()">&times;</span>
+    <div class="modal-content">
+        <img id="modalImage" class="modal-media">
+        <video id="modalVideo" class="modal-media" controls></video>
+    </div>
+</div>
+
+
+            <div id="chatMessages" class="chat-box"></div>
+            <div class="message-input">
+                <input type="text" id="messageInput" placeholder="Type a message">
+                <button onclick="sendMessage()">Send</button>
+              
+                   
+                <input type="file" id="mediaInput" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt">
+                   
+                    <button onclick="sendMedia()">📤 Upload</button>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+
+    <script>
+      const socket = io();
+    let selectedChatUser = null;
+    let localStream, remoteStream, peerConnection;
+    const currentUser = sessionStorage.getItem("username"); 
+    
+
+        if (!currentUser) {
+            alert("Please log in first.");
+            window.location.href = "login.html";
+        }
+
+        document.getElementById("loggedInUser").textContent = `Logged in as: ${currentUser}`; // Show logged-in user
+
+        function saveChatUser(user) {
+    let chatUsers = JSON.parse(localStorage.getItem("chatUsers")) || [];
+    if (!chatUsers.includes(user)) {
+        chatUsers.push(user);
+        localStorage.setItem("chatUsers", JSON.stringify(chatUsers));
+    }
+    // 🔥 Refresh chat list instantly
+}
+
+
+
+function registerUser() {
+            socket.emit("registerUser", { username: currentUser });
+            console.log(`Registered user: ${currentUser}`);
+        }
+
+        socket.on("connect", registerUser);
+        socket.on("reconnect", registerUser);
+        registerUser();
+
+        const servers = {
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+        };
+
+        function getOrCreateVideoContainer() {
+            let container = document.getElementById("videoCallContainer");
+            if (!container) {
+                container = document.createElement("div");
+                container.id = "videoCallContainer";
+                container.className = "video-container";
+                container.innerHTML = `
+                    <video id="localVideo" autoplay playsinline muted></video>
+                    <video id="remoteVideo" autoplay playsinline></video>
+                    <button class="end-call-btn" onclick="endCall()">❌ End Call</button>
+                `;
+                document.body.appendChild(container);
+                console.log("Created video container");
+            }
+            return container;
+        }
+
+        function getOrCreateVoiceContainer(username) {
+            let container = document.getElementById("voiceCallContainer");
+            if (!container) {
+                container = document.createElement("div");
+                container.id = "voiceCallContainer";
+                container.className = "voice-container";
+                container.innerHTML = `
+                    <img id="voiceProfilePic" src="default-profile.png" alt="Profile Pic">
+                    <p id="voiceUsername">${username}</p>
+                    <button class="end-call-btn" onclick="endCall()">❌ End Call</button>
+                `;
+                document.body.appendChild(container);
+                console.log("Created voice container");
+            }
+            fetch(`/get-user-profile-pic?user=${username}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById("voiceProfilePic").src = data.profilePic;
+                    }
+                })
+                .catch(error => console.error("Error fetching profile pic:", error));
+            return container;
+        }
+
+        async function startCall(isVideo) {
+        if (!selectedChatUser) {
+            alert("Please select a chat user first.");
+            return;
+        }
+
+        activeCallUser = selectedChatUser;
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: isVideo,
+                audio: true
+            });
+            console.log("Local stream acquired:", localStream.getTracks());
+
+            let container;
+            if (isVideo) {
+                container = getOrCreateVideoContainer();
+                const localVideo = document.getElementById("localVideo");
+                localVideo.srcObject = localStream;
+                console.log("Local video set");
+            } else {
+                container = getOrCreateVoiceContainer(activeCallUser);
+            }
+            container.style.display = "block";
+            const chatUserElement = document.getElementById("chatUser");
+            if (chatUserElement) chatUserElement.innerText = `Calling ${activeCallUser}...`;
+
+            peerConnection = new RTCPeerConnection(servers);
+            setupPeerConnection(activeCallUser);
+
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+                console.log(`Added track: ${track.kind}`);
+            });
+
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            console.log("Offer created and set:", offer);
+
+            socket.emit("callUser", {
+                sender: currentUser,
+                receiver: activeCallUser,
+                offer,
+                isVideo
+            });
+        } catch (error) {
+            console.error("Error starting call:", error);
+            alert("Failed to access media devices. Check permissions.");
+            endCall(true);
+        }
+    }
+
+    function startVoiceCall() {
+        startCall(false);
+    }
+
+    function startVideoCall() {
+        startCall(true);
+    }
+
+    socket.on("incomingCall", async ({ sender, offer, isVideo }) => {
+        activeCallUser = sender;
+        document.getElementById("globalCallerInfo").innerText = `${sender} is calling...`;
+        document.getElementById("globalCallPopup").style.display = "block";
+
+        window.acceptGlobalCall = async function() {
+            document.getElementById("globalCallPopup").style.display = "none";
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: isVideo,
+                    audio: true
+                });
+                console.log("Local stream acquired for acceptor:", localStream.getTracks());
+
+                let container;
+                if (isVideo) {
+                    container = getOrCreateVideoContainer();
+                    const localVideo = document.getElementById("localVideo");
+                    localVideo.srcObject = localStream;
+                    console.log("Local video set for acceptor");
+                } else {
+                    container = getOrCreateVoiceContainer(activeCallUser);
+                }
+                container.style.display = "block";
+
+                peerConnection = new RTCPeerConnection(servers);
+                setupPeerConnection(activeCallUser);
+
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                    console.log(`Added track for acceptor: ${track.kind}`);
+                });
+
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+                console.log("Remote description set:", offer);
+
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                console.log("Answer created and set:", answer);
+
+                socket.emit("acceptCall", { sender, receiver: currentUser, answer });
+            } catch (error) {
+                console.error("Error accepting call:", error);
+                alert("Failed to accept call. Check permissions.");
+                endCall(true);
+            }
+        };
+
+        window.rejectGlobalCall = function() {
+            document.getElementById("globalCallPopup").style.display = "none";
+            socket.emit("rejectCall", { sender });
+            endCall(true);
+        };
+    });
+
+    socket.on("callAccepted", async ({ receiver, answer }) => {
+        try {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+            console.log("Remote description set for caller:", answer);
+            const chatUserElement = document.getElementById("chatUser");
+            if (chatUserElement) chatUserElement.innerText = `Connected to ${receiver}`;
+        } catch (error) {
+            console.error("Error setting remote description:", error);
+            endCall(true);
+        }
+    });
+
+    socket.on("callRejected", () => {
+        alert(`${activeCallUser} rejected your call`);
+        endCall(true);
+    });
+
+    socket.on("callFailed", ({ message }) => {
+        alert(message);
+        endCall(true);
+    });
+
+    // Add callCancelled listener to hide popup
+    socket.on("callCancelled", () => {
+        console.log("Call was cancelled by the caller before acceptance");
+        document.getElementById("globalCallPopup").style.display = "none";
+        activeCallUser = null; // Reset active call user
+    });
+
+    socket.on("callEnded", () => {
+        console.log("Call ended by remote user");
+        endCall(true);
+    });
+
+    socket.on("receiveICE", ({ candidate }) => {
+        if (peerConnection) {
+            peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+                .then(() => console.log("Added ICE candidate"))
+                .catch(error => console.error("Error adding ICE candidate:", error));
+        }
+    });
+
+    function setupPeerConnection(targetUser) {
+        remoteStream = new MediaStream();
+        const remoteVideo = document.getElementById("remoteVideo");
+        if (remoteVideo) {
+            remoteVideo.srcObject = remoteStream;
+            console.log("Remote stream initialized");
+        }
+
+        peerConnection.ontrack = event => {
+            event.streams[0].getTracks().forEach(track => {
+                remoteStream.addTrack(track);
+                console.log(`Received remote track: ${track.kind}`);
+            });
+            if (remoteVideo) {
+                remoteVideo.srcObject = remoteStream;
+                remoteVideo.play().catch(e => console.error("Error playing remote video:", e));
+            }
+        };
+
+        peerConnection.onicecandidate = event => {
+            if (event.candidate) {
+                socket.emit("sendICE", { candidate: event.candidate, receiver: targetUser });
+                console.log("Sent ICE candidate to:", targetUser);
+            }
+        };
+
+        peerConnection.onconnectionstatechange = () => {
+            console.log("Connection state:", peerConnection.connectionState);
+            if (peerConnection.connectionState === "failed" || peerConnection.connectionState === "disconnected") {
+                endCall(true);
+            } else if (peerConnection.connectionState === "connected") {
+                console.log("Call fully connected");
+            }
+        };
+    }
+
+    function endCall(silent = false) {
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+            localStream = null;
+            console.log("Local stream stopped");
+        }
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+            console.log("Peer connection closed");
+        }
+        const videoContainer = document.getElementById("videoCallContainer");
+        if (videoContainer) videoContainer.style.display = "none";
+        const voiceContainer = document.getElementById("voiceCallContainer");
+        if (voiceContainer) voiceContainer.style.display = "none";
+        const chatUserElement = document.getElementById("chatUser");
+        if (chatUserElement) chatUserElement.innerText = selectedChatUser || "Select a chat";
+        if (!silent && activeCallUser) {
+            socket.emit("endCall", { receiver: activeCallUser });
+            socket.emit("callCancelled", { receiver: activeCallUser }); // Emit callCancelled event
+        }
+        activeCallUser = null;
+    }
+    async function openChat(user) {
+        selectedChatUser = user;
+        sessionStorage.setItem("selectedChatUser", user);
+        document.getElementById("chatUser").innerText = user;
+        document.getElementById("chatMessages").innerHTML = "";
+        loadChatMessages(user);
+        saveChatUser(user);
+
+        try {
+            const response = await fetch("/mark-messages-read", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user: currentUser, chatWith: user })
+            });
+            const data = await response.json();
+            if (data.success) {
+                loadChatList();
+            }
+        } catch (error) {
+            console.error("❌ Error marking messages as read:", error);
+        }
+    }
+async function loadChatList() {
+    const loggedInUser = sessionStorage.getItem("username");
+
+    if (!loggedInUser) {
+        console.error("❌ No logged-in user found.");
+        return;
+    }
+
+    try {
+        const response = await fetch(`/chat-list?user=${loggedInUser}`);
+        const data = await response.json();
+
+        const unreadResponse = await fetch(`/get-unread-count?user=${loggedInUser}`);
+        const unreadData = await unreadResponse.json();
+        console.log("Unread data (text + media):", unreadData); // Debug log
+
+        if (data.success) {
+            const chatListContainer = document.getElementById("chatUsers");
+            chatListContainer.innerHTML = "";
+
+            if (data.chats.length === 0) {
+                chatListContainer.innerHTML = "<p>No chats found.</p>";
+                return;
+            }
+
+            for (const user of data.chats) {
+                const li = document.createElement("li");
+
+                const picResponse = await fetch(`/get-user-profile-pic?user=${user}`);
+                const picData = await picResponse.json();
+                const profilePic = picData.success ? picData.profilePic : "default-profile.png";
+
+                const img = document.createElement("img");
+                img.src = profilePic;
+                img.alt = "Profile Pic";
+                img.style.width = "40px";
+                img.style.height = "40px";
+                img.style.borderRadius = "50%";
+                img.style.marginRight = "10px";
+                img.style.objectFit = "cover";
+                img.onclick = () => openModal(profilePic, "image");
+
+                const nameSpan = document.createElement("span");
+                nameSpan.textContent = user;
+
+                const unreadCount = unreadData.success && unreadData.unread[user] ? unreadData.unread[user] : 0;
+                console.log(`Badge for ${user}: ${unreadCount}`); // Debug log
+                const badge = document.createElement("span");
+                badge.classList.add("unread-badge");
+                badge.textContent = unreadCount;
+                badge.style.display = unreadCount > 0 ? "inline-block" : "none";
+
+                li.appendChild(img);
+                li.appendChild(nameSpan);
+                li.appendChild(badge);
+                li.onclick = () => openChat(user);
+
+                chatListContainer.appendChild(li);
+            }
+        }
+    } catch (error) {
+        console.error("❌ Error loading chat list:", error);
+    }
+}
+// Ensure single listener for receiveMessage
+
+async function getUserProfilePic(username) {
+    try {
+        const response = await fetch(`/get-profile?user=${encodeURIComponent(username)}`);
+        const data = await response.json();
+
+        if (data.success) {
+            return data.profile.profile_pic ? data.profile.profile_pic : "default-profile.png";
+        }
+    } catch (error) {
+        console.error("❌ Error fetching profile picture:", error);
+    }
+    return "default-profile.png"; // Return default if error
+}
+
+
+
+ // ✅ Toggle Hamburger Dropdown
+function toggleChatlistMenu() {
+    let dropdown = document.getElementById("chatlistDropdown");
+    dropdown.classList.toggle("hidden"); // Show or hide dropdown menu
+}
+
+// ✅ Open Search Bar Properly
+function openSearchUser() {
+    let searchContainer = document.getElementById("chatlistSearchContainer");
+    searchContainer.style.display = "flex"; // ✅ Make search bar visible
+    document.getElementById("chatlistDropdown").classList.add("hidden"); // ✅ Close dropdown after clicking
+}
+
+// ✅ Close Search Bar
+function closeSearchUser() {
+    let searchContainer = document.getElementById("chatlistSearchContainer");
+    searchContainer.style.display = "none"; // ✅ Hide search bar
+}
+
+// ✅ Filter Users in Chat List
+function searchUserInChatlist() {
+    let input = document.getElementById("chatlistSearchInput").value.toLowerCase();
+    let chatUsers = document.getElementById("chatUsers").getElementsByTagName("li");
+
+    for (let i = 0; i < chatUsers.length; i++) {
+        let username = chatUsers[i].textContent.toLowerCase();
+        chatUsers[i].style.display = username.includes(input) ? "flex" : "none";
+    }
+}
+
+async function deleteChatUser() {
+    const loggedInUser = sessionStorage.getItem("username");
+    const usernameToDelete = prompt("Enter the username to remove:");
+
+    if (!loggedInUser || !usernameToDelete) return;
+
+    try {
+        const response = await fetch('/delete-chat-user', {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ loggedInUser, chatUser: usernameToDelete })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            alert("User removed from chat list.");
+            loadChatList(); // ✅ Refresh the chat list after deletion
+        } else {
+            alert("❌ Error: " + data.message);
+        }
+    } catch (error) {
+        console.error("❌ Error deleting chat user:", error);
+        alert("Error deleting user.");
+    }
+}
+
+
+
+
+
+function sendMessage() {
+    const message = document.getElementById("messageInput").value.trim();
+    if (!message || !selectedChatUser) return;
+    
+    const currentUser = sessionStorage.getItem("username");
+    socket.emit("sendMessage", { sender: currentUser, receiver: selectedChatUser, message });
+    displayMessage(currentUser, message, true, new Date().toISOString());
+    document.getElementById("messageInput").value = "";
+}
+
+
+
+socket.off("receiveMessage");
+socket.on("receiveMessage", ({ sender, receiver, message, is_read }) => {
+    const currentUser = sessionStorage.getItem("username");
+    console.log(`Received: ${sender} -> ${receiver}, is_read: ${is_read}`);
+
+    if (receiver === currentUser) {
+        if (sender !== selectedChatUser && is_read === 0) {
+            addNotification(sender, message);
+            loadChatList(); // Update badge
+        } else if (is_read === 0) {
+            displayMessage(sender, message, false, new Date().toISOString());
+        }
+    }
+});
+socket.on("messagesRead", ({ chatWith }) => {
+    if (selectedChatUser === chatWith) {
+        // Refresh chat list to clear badge
+    }
+});
+    
+        async function searchUser() {
+    const query = document.getElementById("searchInput").value.trim();
+    if (!query) {
+        alert("Enter a username or email!");
+        return;
+    }
+
+    try {
+        const response = await fetch(`/search-user?query=${query}`);
+        const data = await response.json();
+
+        if (data.success) {
+            let resultsHTML = "<h4>Results:</h4>";
+            data.users.forEach(user => {
+                resultsHTML += `<div class="user-box">
+                    <p>${user.username} (${user.email})</p>
+                    <button onclick="startChat('${user.username}')">Chat</button>
+                </div>`;
+            });
+            document.getElementById("searchResults").innerHTML = resultsHTML;
+        } else {
+            alert("User not found.");
+        }
+    } catch (error) {
+        console.error("❌ Search Error:", error);
+        alert("Error searching for user.");
+    }
+}
+// Frontend (chatbox.html)
+socket.on("chatAdded", ({ user }) => {
+    saveChatUser(user);  // Save the new user to localStorage
+    loadChatList();      // Refresh the chat list
+});
+
+function startChat(username) {
+    const loggedInUser = sessionStorage.getItem("username");
+
+    fetch('/save-chat-user', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loggedInUser, chatUser: username })
+    }).then(response => response.json())
+      .then(data => {
+          if (data.success) {
+              openChat(username);
+          } else {
+              alert("Failed to add user to chat list.");
+          }
+      })
+      .catch(error => console.error("❌ Error saving chat user:", error));
+}
+
+
+
+       
+async function sendMedia() {
+    const mediaInput = document.getElementById("mediaInput").files[0];
+    if (!mediaInput || !selectedChatUser) return;
+  
+    const sender = sessionStorage.getItem("username");
+    const receiver = selectedChatUser;
+    const formData = new FormData();
+    formData.append("sender", sender);
+    formData.append("receiver", receiver);
+    formData.append("file", mediaInput);
+
+    try {
+        const response = await fetch("/upload-media", {
+            method: "POST",
+            body: formData,
+        });
+        const data = await response.json();
+        if (data.success) {
+            const mimeType = mediaInput.type;
+            let fileType = mimeType.startsWith("image") ? "image" :
+                          mimeType.startsWith("video") ? "video" :
+                          mimeType.startsWith("audio") ? "audio" :
+                          mimeType === "application/pdf" ? "pdf" :
+                          mimeType === "text/plain" ? "text" : "file";
+
+            socket.emit("sendMedia", { sender, receiver, fileUrl: data.fileUrl, fileType, fileName: mediaInput.name });
+            displayMediaMessage(data.fileUrl, fileType, true, mediaInput.name);
+        } else {
+            alert(`Failed to upload media: ${data.message}`);
+        }
+    } catch (error) {
+        console.error("Error uploading media:", error);
+    }
+}
+
+socket.off("receiveMedia");
+socket.on("receiveMedia", ({ sender, receiver, fileUrl, fileType, fileName, is_read }) => {
+    const currentUser = sessionStorage.getItem("username");
+    console.log(`Received media from ${sender} to ${receiver}: ${fileUrl}, type: ${fileType}, is_read: ${is_read}`);
+
+    if (receiver === currentUser) {
+        if (sender !== selectedChatUser && is_read === 0) {
+            addNotification(sender, `Sent a ${fileType} file: ${fileName || "Unnamed"}`);
+            loadChatList();
+        } else if (is_read === 0) {
+            displayMediaMessage(fileUrl, fileType, false, fileName);
+        }
+    }
+});
+// Inject the CSS dynamically (you can also add this to your styles.css file)
+// Function to display text messages with context menu
+function displayMessage(sender, message, isSent, timestamp, messageId = null) {
+    const chatMessages = document.getElementById("chatMessages");
+    const messageDiv = document.createElement("div");
+
+    messageDiv.classList.add("message", isSent ? "sent" : "received");
+    messageDiv.setAttribute("data-sender", sender);
+    messageDiv.setAttribute("data-timestamp", timestamp);
+    if (messageId) messageDiv.setAttribute("data-message-id", messageId);
+
+    messageDiv.innerHTML = `
+        <p><b>${isSent ? "You" : sender}:</b> ${message}</p>
+        <span class="timestamp">${formatTimestamp(timestamp)}</span>
+    `;
+
+    messageDiv.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        showContextMenu(e, isSent, messageDiv, "text", message);
+    });
+
+    chatMessages.appendChild(messageDiv);
+}
+
+// Update displayMediaMessage similarly
+function displayMediaMessage(fileUrl, fileType, isSent, fileName, timestamp, messageId = null) {
+    const chatMessages = document.getElementById("chatMessages");
+    const mediaMessage = document.createElement("div");
+
+    mediaMessage.classList.add("message", isSent ? "sent" : "received");
+    mediaMessage.setAttribute("data-sender", isSent ? sessionStorage.getItem("username") : selectedChatUser);
+    mediaMessage.setAttribute("data-timestamp", timestamp);
+    if (messageId) mediaMessage.setAttribute("data-message-id", messageId);
+
+    let mediaHTML;
+    switch (fileType) {
+        case "image":
+            mediaHTML = `<img src="${fileUrl}" class="chat-media" onclick="openModal('${fileUrl}', 'image')">`;
+            break;
+        case "video":
+            mediaHTML = `<video src="${fileUrl}" controls class="chat-media" onclick="openModal('${fileUrl}', 'video')"></video>`;
+            break;
+        case "audio":
+            mediaHTML = `<audio src="${fileUrl}" controls class="chat-media"></audio>`;
+            break;
+        case "pdf":
+            mediaHTML = `<div class="chat-pdf"><iframe src="${fileUrl}" width="100%" height="300px" frameborder="0"></iframe><p><a href="${fileUrl}" target="_blank">${fileName || "Download PDF"}</a></p></div>`;
+            break;
+        case "text":
+            fetch(fileUrl).then(response => response.text()).then(text => {
+                mediaMessage.querySelector(".chat-text").innerText = text;
+            }).catch(err => {
+                console.error("Error fetching text file:", err);
+                mediaMessage.querySelector(".chat-text").innerText = "Error loading text file.";
+            });
+            mediaHTML = `<div class="chat-text">Loading text file...</div><p><a href="${fileUrl}" target="_blank">${fileName || "Download Text"}</a></p>`;
+            break;
+        case "document":
+            mediaHTML = `<a href="${fileUrl}" target="_blank" class="chat-file">${fileName || "Download Document"}</a>`;
+            break;
+        case "file":
+            mediaHTML = `<a href="${fileUrl}" target="_blank" class="chat-file">${fileName || "Download File"}</a>`;
+            break;
+        default:
+            mediaHTML = `<p>Unsupported file type</p>`;
+    }
+
+    mediaMessage.innerHTML = `
+        <p><b>${isSent ? "You" : selectedChatUser}:</b></p>
+        ${mediaHTML}
+    `;
+
+    mediaMessage.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        showContextMenu(e, isSent, mediaMessage, fileType, fileUrl);
+    });
+
+    chatMessages.appendChild(mediaMessage);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function showContextMenu(event, isSent, messageElement, messageType, content) {
+    // Remove any existing context menu
+    const existingMenu = document.querySelector(".context-menu");
+    if (existingMenu) existingMenu.remove();
+
+    const menu = document.createElement("div");
+    menu.classList.add("context-menu");
+    menu.style.top = `${event.pageY}px`;
+    menu.style.left = `${event.pageX}px`;
+
+    if (isSent) {
+        menu.innerHTML = `
+            <button onclick="deleteMessage('${messageType}', '${content}', true, '${messageElement.getAttribute("data-timestamp")}')">Delete for Everyone</button>
+            <button onclick="deleteMessage('${messageType}', '${content}', false, '${messageElement.getAttribute("data-timestamp")}')">Delete for Me</button>
+        `;
+    } else {
+        menu.innerHTML = `
+            <button onclick="deleteMessage('${messageType}', '${content}', false, '${messageElement.getAttribute("data-timestamp")}')">Delete for Me</button>
+        `;
+    }
+
+    document.body.appendChild(menu);
+
+    // Remove menu when clicking elsewhere
+    document.addEventListener("click", function removeMenu() {
+        menu.remove();
+        document.removeEventListener("click", removeMenu);
+    });
+}
+// Update loadChatMessages to include message IDs
+async function loadChatMessages(user) {
+    const currentUser = sessionStorage.getItem("username");
+
+    try {
+        const response = await fetch(`/get-messages?user1=${currentUser}&user2=${user}`);
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById("chatMessages").innerHTML = "";
+            data.messages.forEach(msg => {
+                const isSent = msg.sender === currentUser;
+                if (msg.type === "text") {
+                    displayMessage(msg.sender, msg.content, isSent, msg.timestamp, msg.id);
+                } else {
+                    displayMediaMessage(msg.content, msg.type, isSent, msg.fileName || "Unnamed", msg.timestamp, msg.id);
+                }
+            });
+            document.getElementById("chatMessages").scrollTop = document.getElementById("chatMessages").scrollHeight;
+        }
+    } catch (error) {
+        console.error("❌ Error loading chat history:", error);
+    }
+}
+
+// Update deleteMessage to include message ID if available
+async function deleteMessage(messageType, content, deleteForEveryone, timestamp) {
+    const sender = sessionStorage.getItem("username"); // Current user
+    const receiver = selectedChatUser; // Other user
+    const messageElement = document.querySelector(`.message[data-timestamp="${timestamp}"][data-sender="${deleteForEveryone ? sender : receiver}"]`);
+    const messageId = messageElement ? messageElement.getAttribute("data-message-id") : null;
+
+    console.log("Deleting message:", { sender, receiver, content, messageType, timestamp, messageId, deleteForEveryone });
+
+    try {
+        const response = await fetch("/delete-message", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sender,
+                receiver,
+                content,
+                messageType,
+                timestamp,
+                deleteForEveryone
+            })
+        });
+
+        const data = await response.json();
+        console.log("Delete response:", data);
+        if (data.success) {
+            if (deleteForEveryone) {
+                socket.emit("messageDeleted", { sender, receiver, content, messageType, timestamp, messageId });
+            }
+            const messages = document.querySelectorAll(".message");
+            messages.forEach(msg => {
+                if (msg.getAttribute("data-timestamp") === timestamp && 
+                    (msg.getAttribute("data-sender") === sender || msg.getAttribute("data-sender") === receiver)) {
+                    msg.remove();
+                }
+            });
+        } else {
+            alert("Failed to delete message: " + data.message);
+        }
+    } catch (error) {
+        console.error("Error deleting message:", error);
+        alert("Error deleting message.");
+    }
+}
+// Update socket handler for real-time deletion
+socket.on("messageDeleted", ({ sender, receiver, content, messageType, timestamp, messageIds }) => {
+    const currentUser = sessionStorage.getItem("username");
+    if (receiver === currentUser || sender === currentUser) {
+        const messages = document.querySelectorAll(".message");
+        messages.forEach(msg => {
+            if (msg.getAttribute("data-timestamp") === timestamp && 
+                (msg.getAttribute("data-sender") === sender || msg.getAttribute("data-sender") === receiver)) {
+                msg.remove();
+            }
+        });
+    }
+});
+function openModal(fileUrl, fileType) {
+    const modal = document.getElementById("mediaModal");
+    const modalImage = document.getElementById("modalImage");
+    const modalVideo = document.getElementById("modalVideo");
+
+    if (fileType === "image") {
+        modalImage.src = fileUrl;
+        modalImage.style.display = "block";
+        modalVideo.style.display = "none";
+    } else if (fileType === "video") {
+        modalVideo.src = fileUrl;
+        modalVideo.style.display = "block";
+        modalImage.style.display = "none";
+    } else if (fileType === "pdf") {
+        modalVideo.style.display = "none";
+        modalImage.style.display = "none";
+        const iframe = document.createElement("iframe");
+        iframe.src = fileUrl;
+        iframe.style.width = "100%";
+        iframe.style.height = "100%";
+        modal.querySelector(".modal-content").appendChild(iframe);
+    }
+
+    modal.style.display = "flex";
+}
+
+function closeModal() {
+    const modal = document.getElementById("mediaModal");
+    modal.style.display = "none";
+    modalImage.src = "";
+    modalVideo.src = "";
+    const iframe = modal.querySelector("iframe");
+    if (iframe) iframe.remove();
+}
+
+
+function formatTimestamp(timestamp) {
+    const date = new Date(timestamp);
+    return date.toLocaleString(); // Adjust format as needed
+}
+// ✅ Toggle the dropdown menu
+function toggleMenu() {
+    const menu = document.getElementById("dropdownMenu");
+    menu.style.display = (menu.style.display === "block") ? "none" : "block";
+}
+
+// ✅ Close dropdown when clicking outside
+document.addEventListener("click", (event) => {
+    const menu = document.getElementById("dropdownMenu");
+    const button = document.querySelector(".menu-btn");
+
+    if (menu.style.display === "block" && !menu.contains(event.target) && !button.contains(event.target)) {
+        menu.style.display = "none";
+    }
+});
+
+// ✅ Placeholder for Search Messages
+
+
+// ✅ Placeholder for Clear Chat
+function clearChat() {
+    const confirmation = confirm("Are you sure you want to delete all messages?");
+    if (!confirmation) return;
+
+    alert("Clear Chat functionality will be implemented.");
+    document.getElementById("dropdownMenu").style.display = "none"; // Close menu
+}
+
+// ✅ Show search input
+// ✅ Show search input
+function searchMessages() {
+    const searchBar = document.getElementById("searchBar");
+    const searchInput = document.getElementById("searchInput");
+    searchInput.value = ""; // Clear previous searches
+    searchBar.style.display = "flex";
+    searchInput.focus();
+    document.getElementById("dropdownMenu").style.display = "none"; // Close menu
+}
+
+// ✅ Hide search input
+function hideSearch() {
+    document.getElementById("searchBar").style.display = "none";
+    filterMessages(""); // Reset messages when closing search
+}
+
+// ✅ Filter messages in real-time
+function filterMessages() {
+    const searchValue = document.getElementById("searchInput").value.toLowerCase();
+    const messages = document.querySelectorAll(".message");
+
+    messages.forEach(msg => {
+        const text = msg.innerText.toLowerCase();
+        msg.style.display = text.includes(searchValue) ? "block" : "none";
+    });
+}
+
+
+async function clearChat() {
+    const confirmation = confirm("Are you sure you want to delete all messages in this chat? This will only clear the chat for you.");
+    if (!confirmation) return;
+
+    const currentUser = sessionStorage.getItem("username");
+
+    try {
+        const response = await fetch(`/clear-chat?user=${currentUser}&chatWith=${selectedChatUser}`, {
+            method: "DELETE",
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            alert("Chat cleared successfully!");
+            document.getElementById("chatMessages").innerHTML = ""; // ✅ Clear text & media messages on UI
+        } else {
+            alert("Failed to clear chat.");
+        }
+    } catch (error) {
+        console.error("❌ Error clearing chat:", error);
+    }
+}
+
+
+    document.addEventListener("DOMContentLoaded", function() {
+        loadChatList(); // ✅ Load chat users on page load
+    });
+    </script>
+</body>
+</html>

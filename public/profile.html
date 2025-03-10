@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="profile-pic-container">
+        <img id="profile-pic" src="default-profile.png" alt="Profile Picture" onclick="openImageModal(this.src)">
+    </div>
+    <div id="imageModal" class="modal" onclick="closeImageModal()">
+        <span class="close">&times;</span>
+        <img id="imageModalImg" class="modal-content">
+    </div>
+    <div id="follow-section">
+        <p>
+            <span class="clickable" onclick="showFollowList('followers')">
+                <span id="followerBadge" class="badge" style="display: none;">0</span> 
+                <strong>Followers:</strong> <span id="followersCount">0</span>
+            </span> |
+            <span class="clickable" onclick="showFollowList('following')">
+                <strong>Following:</strong> <span id="followingCount">0</span>
+            </span>
+        </p>
+    </div>
+    
+    
+    
+    <!-- 🔥 Modal to Show Follower/Following List -->
+    <div id="followListModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close" onclick="closeFollowList()">&times;</span>
+            
+            <ul id="followList"></ul>
+        </div>
+    </div>
+    
+    
+    <div id="profile-container">
+        <h2>Welcome, <span id="username">Loading...</span></h2>
+        <p>Email: <span id="email">Loading...</span></p>
+        <p>Age: <span id="age">Loading...</span></p>
+        <p>Gender: <span id="gender">Loading...</span></p>
+        <button id="followBtn" onclick="toggleFollow()">Follow</button>
+        
+    </div>
+    
+    <div id="ownerButtons">
+        <button onclick="goToChat()">💬 Chat</button>
+        <button onclick="goToSocials()">🌎 Socials</button>
+        
+        <button onclick="showEditForm()">✏️ Edit Profile</button>
+        <input type="file" id="profile-pic-input" accept="image/*" style="display: none;">
+    <button id="changePicBtn" onclick="document.getElementById('profile-pic-input').click();">📸 Change Profile Picture</button>
+    <button onclick="logout()">🚪 Logout</button>
+    </div>
+
+    <button onclick="viewDiary()">📖 View Diary</button>
+</div>
+    
+    <!-- ✅ Edit Profile Form (Initially Hidden) -->
+    <div id="editProfileForm" style="display: none;">
+        <h3>Edit Profile</h3>
+        <label>Age: <input type="number" id="editAge"></label>
+        <label>Gender: 
+            <select id="editGender">
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+            </select>
+        </label>
+        <button onclick="saveProfile()">💾 Save Changes</button>
+        <button onclick="cancelEdit()">❌ Cancel</button>
+    </div>
+    
+   
+    
+    <script>
+        function getQueryParam(param) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(param);
+        }
+    
+        const profileUser = getQueryParam("user") || sessionStorage.getItem("username");
+        const loggedInUser = sessionStorage.getItem("username");
+    
+        async function loadProfile() {
+    try {
+        // ✅ Fetch user profile details first
+        const response = await fetch(`/get-profile?user=${encodeURIComponent(profileUser)}`);
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById("username").textContent = data.profile.username;
+            document.getElementById("email").textContent = data.profile.email;
+            document.getElementById("age").textContent = data.profile.age || "Not Set";
+            document.getElementById("gender").textContent = data.profile.gender || "Not Set";
+            document.getElementById("profile-pic").src = data.profile.profile_pic || "default-profile.png";
+
+            // ✅ Fetch follow stats
+            await fetchFollowStats();
+
+            // ✅ Check if the logged-in user is following this profile
+            if (profileUser !== loggedInUser) {
+                const checkFollowResponse = await fetch(`/check-follow?user=${loggedInUser}&target=${profileUser}`);
+                const checkFollowData = await checkFollowResponse.json();
+
+                const followBtn = document.getElementById("followBtn");
+                if (checkFollowData.isFollowing) {
+                    followBtn.textContent = "Unfollow";
+                    followBtn.classList.add("unfollow");
+                } else {
+                    followBtn.textContent = "Follow";
+                    followBtn.classList.remove("unfollow");
+                }
+            } else {
+                document.getElementById("followBtn").style.display = "none"; // Hide button for own profile
+            }
+        } else {
+            alert("❌ User not found.");
+            window.location.href = "chatbox.html";
+        }
+    } catch (error) {
+        console.error("❌ Error fetching profile:", error);
+        alert("Error loading profile.");
+    }
+}
+
+// ✅ Fetch follow stats separately
+async function fetchFollowStats() {
+    try {
+        const followResponse = await fetch(`/get-follow-stats?user=${profileUser}`);
+        const followData = await followResponse.json();
+
+        if (followData.success) {
+            document.getElementById("followersCount").textContent = followData.followers;
+            document.getElementById("followingCount").textContent = followData.following;
+
+            // ✅ Show follower badge only if new followers exist
+            if (profileUser === loggedInUser && followData.newFollowerCount > 0) {
+                document.getElementById("followerBadge").textContent = followData.newFollowerCount;
+                document.getElementById("followerBadge").style.display = "inline-block";
+            } else {
+                document.getElementById("followerBadge").style.display = "none";
+            }
+        }
+    } catch (error) {
+        console.error("❌ Error fetching follow stats:", error);
+    }
+}
+
+
+
+// ✅ Toggle Follow/Unfollow
+async function toggleFollow() {
+    const followBtn = document.getElementById("followBtn");
+    const isFollowing = followBtn.textContent === "Unfollow";
+
+    try {
+        const response = await fetch("/toggle-follow", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                user: loggedInUser,
+                target: profileUser,
+                action: isFollowing ? "unfollow" : "follow"
+            })
+        });
+
+        const data = await response.json();
+        console.log("📥 Server Response:", data); // ✅ Log the response
+
+        if (data.success) {
+            followBtn.textContent = isFollowing ? "Follow" : "Unfollow";
+            followBtn.classList.toggle("unfollow", !isFollowing);
+            loadProfile(); // ✅ Refresh counts
+        } else {
+            alert("❌ Error updating follow status: " + data.message);
+        }
+    } catch (error) {
+        console.error("❌ Fetch error:", error);
+        alert("Error updating follow status.");
+    }
+}
+
+loadProfile();
+    
+
+
+        document.getElementById("profile-pic-input").addEventListener("change", async function(event) {
+        const file = event.target.files[0];
+
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append("username", sessionStorage.getItem("username"));
+        formData.append("profilePic", file);
+
+        try {
+            const response = await fetch("/upload-profile-pic", {
+                method: "POST",
+                body: formData
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert("✅ Profile picture updated successfully!");
+                document.getElementById("profile-pic").src = data.imageUrl;
+            } else {
+                alert("❌ Error updating profile picture.");
+            }
+        } catch (error) {
+            console.error("❌ Error uploading profile picture:", error);
+            alert("Error uploading profile picture.");
+        }
+    });
+        function showEditForm() {
+            document.getElementById("profile-container").style.display = "none"; // ✅ Updated ID
+            document.getElementById("ownerButtons").style.display = "none";
+            document.getElementById("editProfileForm").style.display = "block";
+        }
+    
+        function cancelEdit() {
+            document.getElementById("profile-container").style.display = "block"; // ✅ Updated ID
+            document.getElementById("editProfileForm").style.display = "none";
+        }
+    
+        async function saveProfile() {
+            const updatedAge = document.getElementById("editAge").value;
+            const updatedGender = document.getElementById("editGender").value;
+    
+            try {
+                const response = await fetch("/update-profile", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        username: loggedInUser,
+                        age: updatedAge,
+                        gender: updatedGender
+                    })
+                });
+    
+                const data = await response.json();
+                if (data.success) {
+                    alert("✅ Profile updated successfully!");
+                    sessionStorage.setItem("age", updatedAge);
+                    sessionStorage.setItem("gender", updatedGender);
+                    location.reload(); // Refresh the profile
+                } else {
+                    alert("❌ Error updating profile.");
+                }
+            } catch (error) {
+                console.error("❌ Error saving profile:", error);
+                alert("Error saving profile.");
+            }
+        }
+
+
+    function adjustButtons() {
+        const ownerButtons = document.getElementById("ownerButtons");
+        if (profileUser !== loggedInUser) {
+            ownerButtons.style.display = "none";  
+        } else {
+            ownerButtons.style.display = "block";  
+        }
+    }
+
+   
+    function viewDiary() {
+        window.location.href = `diary.html?user=${encodeURIComponent(profileUser)}`;
+    }
+
+    // ✅ Load Profile and Adjust Buttons on Page Load
+    loadProfile().then(adjustButtons);
+        // ✅ Hide buttons if viewing another user's profile
+        if (profileUser !== loggedInUser) {
+            document.getElementById("ownerButtons").style.display = "none"; // Hide chat, edit, logout
+        }
+
+        function goToChat() {
+            window.location.href = "chat.html";
+        }
+
+        function goToSocials() {
+            window.location.href = "socials.html";
+        }
+
+        function logout() {
+            sessionStorage.clear();
+            alert("Logged out!");
+            window.location.href = "login.html";
+        }
+
+        function viewDiary() {
+        const profileUser = getQueryParam("user") || sessionStorage.getItem("username");
+        window.location.href = `diary.html?user=${encodeURIComponent(profileUser)}`;
+    }
+        
+
+        function editProfile() {
+            alert("Edit profile functionality coming soon!");
+        }
+
+        loadProfile();
+        function openImageModal(imageSrc) {
+        const modal = document.getElementById("imageModal");
+        const modalImg = document.getElementById("imageModalImg");
+
+        modal.style.display = "flex";
+        modalImg.src = imageSrc;
+    }
+
+    function closeImageModal() {
+        document.getElementById("imageModal").style.display = "none";
+    }
+
+    async function showFollowList(type) {
+    if (type === "followers") {
+        document.getElementById("followerBadge").style.display = "none"; // Hide badge
+
+        // ✅ Mark new followers as seen in the database
+        try {
+            await fetch(`/mark-followers-seen`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user: loggedInUser })
+            });
+        } catch (error) {
+            console.error("❌ Error marking followers as seen:", error);
+        }
+    }
+
+    try {
+        const response = await fetch(`/get-follow-list?user=${profileUser}&type=${type}`);
+        const data = await response.json();
+
+        if (data.success) {
+            const followList = document.getElementById("followList");
+
+            // ✅ Completely clear any existing content
+            followList.innerHTML = "";
+
+            // ✅ Add "Followers" or "Following" at the top inside the column
+            const titleItem = document.createElement("li");
+            titleItem.classList.add("follower-title");
+            titleItem.textContent = type === "followers" ? "Followers" : "Following";
+            followList.appendChild(titleItem);
+
+            if (data.users.length === 0) {
+                const emptyItem = document.createElement("li");
+                emptyItem.textContent = "No users found.";
+                followList.appendChild(emptyItem);
+            } else {
+                data.users.forEach(user => {
+                    const userItem = document.createElement("li");
+                    userItem.classList.add("follower-item");
+                    userItem.innerHTML = `
+                        <img src="${user.profile_pic || 'default-profile.png'}" alt="${user.username}">
+                        <span>${user.username}</span>
+                    `;
+                    userItem.onclick = () => openProfile(user.username);
+                    followList.appendChild(userItem);
+                });
+            }
+
+            document.getElementById("followListModal").style.display = "flex";
+        } else {
+            alert("❌ Error fetching follow list.");
+        }
+    } catch (error) {
+        console.error("❌ Error:", error);
+        alert("Error fetching follow list.");
+    }
+}
+
+
+
+function closeFollowList() {
+    document.getElementById("followListModal").style.display = "none";
+}
+    </script>
+</body>
+</html>

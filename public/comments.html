@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diary Comments</title>
+    <link rel="stylesheet" href="styles.css">
+    <script defer src="comments.js"></script>
+</head>
+<body>
+    <div class="comments-container">
+        <h2 id="diaryOwner">Loading...</h2>  <!-- ✅ Display Diary Owner -->
+        
+       
+
+        <!-- ✅ Comment Section -->
+        <div id="commentList"></div>
+
+         <!-- ✅ Comment Input Box -->
+         <div class="comment-input">
+            <textarea id="commentText" placeholder="Write a comment..."></textarea>
+            <button onclick="postComment()">Post</button>
+        </div>
+
+        <!-- ✅ Close Button -->
+        <button class="close-btn" onclick="closeCommentPage()">Close</button>
+    </div>
+</body>
+</html>

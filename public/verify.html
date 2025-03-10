@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Email - Chat App</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="form-container">
+        <h2>Email Verification</h2>
+        <p>A verification code has been sent to your email. Enter it below to verify your account.</p>
+        <form id="verifyForm">
+            <input type="text" id="verificationCode" placeholder="Enter Verification Code" required>
+            <button type="submit">Verify</button>
+        </form>
+        <p>Didn't receive a code? <a href="#" id="resendCode">Resend</a></p>
+    </div>
+    <script src="verify.js"></script>
+</body>
+</html>
